@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -eu
+
+usage() {
+  cat <<EOF
+
+Usage: kubectl console x.x.x.x
+
+Run a command in a running containers
+EOF
+  exit 0
+}
+
+to_json() {
+  text="$*"
+  p=""
+  for i in $text; do
+    [[ -n "$p" ]] && p+=", "
+    p+="\"$i"\"
+  done
+  echo -en "$p"
+}
+
+
+[ $# -eq 0 ] && usage
+
+KUBECTL="$(type -p kubectl)"
+WORKER=$1
+
+
+temp_pod="kubectl-console-temp-privileged-pod-${WORKER//./-}-${RANDOM}"
+
+
+read -r -d '' OVERRIDES <<EOF || :
+{
+    "apiVersion": "v1",
+    "spec": {
+        "hostPID":true,
+        "hostNetwork": true,
+        "hostIPC": true,
+        "volumes":[
+        {"name":"host-volume","hostPath":{"path":"/","type":"Directory"}}
+        ],
+        "containers": [
+            {
+                "image": "docker",
+                "name": "'$temp_pod'",
+                "stdin": true,
+                "stdinOnce": true,
+                "securityContext": { "privileged":true, "allowPrivilegeEscalation":true },
+                "tty": true,
+                "restartPolicy": "Never",
+                "command": ["/bin/bash"],
+                "volumeMounts": [{
+                    "mountPath": "/",
+                    "name": "host-volume"
+                }]
+            }
+        ],
+
+        "nodeSelector": {"kubernetes.io/hostname": "'$WORKER'"}
+    }
+}
+EOF
+
+function cleanup()
+{
+  echo -e "Deleting prvillaged pod $temp_pod on worker $WORKER...\n"
+
+  $KUBECTL delete pod $temp_pod >/dev/null 2>&1
+
+}
+
+trap cleanup EXIT SIGINT
+
+echo -e "Creating a prvillaged pod '$temp_pod' on worker $WORKER...\n"
+
+eval "$KUBECTL" run -it --restart=Never --image=docker --overrides="'${OVERRIDES}'" "$temp_pod"
