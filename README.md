@@ -1,4 +1,4 @@
-# kubectl-node
+# kubectl-console
 
 A useful kubectl plugin that enables you to bash into any worker with root access and the host file system loaded. Can be used to collect artifacts from a worker to debug incidents. ex: runnig tcpdump
 
